@@ -87,3 +87,20 @@ if (ENV.CURSEFORGE_KEY) {
 		}
 	}
 }
+
+runClient {
+	def localProperties = file('local.properties')
+	if (localProperties.exists()) {
+		Properties properties = new Properties()
+		properties.load(localProperties.newDataInputStream())
+		def username = (String)properties.get('username')
+		def password = (String)properties.get('password')
+		if (!username.empty && !password.empty) {
+			args = ['--username',username,'--pass',password]
+		}
+	}
+}
+
+runServer {
+	args = ['nogui']
+}
