@@ -6,7 +6,6 @@ import com.feed_the_beast.ftblib.lib.data.Universe;
 import com.feed_the_beast.ftblib.lib.gui.misc.ChunkSelectorMap;
 import com.feed_the_beast.ftblib.lib.math.BlockPosContainer;
 import com.feed_the_beast.ftblib.lib.math.ChunkDimPos;
-import com.feed_the_beast.ftblib.lib.math.Ticks;
 import com.feed_the_beast.ftbutilities.FTBUtilitiesConfig;
 import com.feed_the_beast.ftbutilities.FTBUtilitiesPermissions;
 import com.feed_the_beast.ftbutilities.events.chunks.ChunkModifiedEvent;
@@ -68,7 +67,7 @@ public class ClaimedChunks
 	{
 		pendingChunks.clear();
 		map.clear();
-		nextChunkloaderUpdate = 0;
+		nextChunkloaderUpdate = 0L;
 		isDirty = true;
 	}
 
@@ -106,11 +105,11 @@ public class ClaimedChunks
 	}
 
 
-	public void update(MinecraftServer server, long now)
+	public void update(MinecraftServer server, long nowTime)
 	{
-		if (nextChunkloaderUpdate <= now)
+		if (nextChunkloaderUpdate <= nowTime)
 		{
-			nextChunkloaderUpdate = now + Ticks.MINUTE;
+			nextChunkloaderUpdate = nowTime + 60000L;
 			markDirty();
 		}
 
@@ -186,7 +185,7 @@ public class ClaimedChunks
 		return map.isEmpty() ? Collections.emptyList() : map.values();
 	}
 
-	public Set<ClaimedChunk> getTeamChunks(@Nullable ForgeTeam team, boolean includePending)
+	public Set<ClaimedChunk> getTeamChunks(@Nullable ForgeTeam team, OptionalInt dimension, boolean includePending)
 	{
 		if (team == null)
 		{
@@ -197,7 +196,7 @@ public class ClaimedChunks
 
 		for (ClaimedChunk chunk : map.values())
 		{
-			if (!chunk.isInvalid() && team.equalsTeam(chunk.getTeam()))
+			if (!chunk.isInvalid() && team.equalsTeam(chunk.getTeam()) && (!dimension.isPresent() || dimension.getAsInt() == chunk.getPos().dim))
 			{
 				set.add(chunk);
 			}
@@ -207,7 +206,7 @@ public class ClaimedChunks
 		{
 			for (ClaimedChunk chunk : pendingChunks)
 			{
-				if (team.equalsTeam(chunk.getTeam()))
+				if (team.equalsTeam(chunk.getTeam()) && (!dimension.isPresent() || dimension.getAsInt() == chunk.getPos().dim))
 				{
 					set.add(chunk);
 				}
@@ -217,9 +216,9 @@ public class ClaimedChunks
 		return set;
 	}
 
-	public Set<ClaimedChunk> getTeamChunks(@Nullable ForgeTeam team)
+	public Set<ClaimedChunk> getTeamChunks(@Nullable ForgeTeam team, OptionalInt dimension)
 	{
-		return getTeamChunks(team, false);
+		return getTeamChunks(team, dimension, false);
 	}
 
 	public boolean canPlayerInteract(EntityPlayerMP player, EnumHand hand, BlockPosContainer block, BlockInteractionType type)
@@ -263,7 +262,7 @@ public class ClaimedChunks
 		return true;
 	}
 
-	public boolean canPlayerModify(ForgePlayer player, ChunkDimPos pos)
+	public boolean canPlayerModify(ForgePlayer player, ChunkDimPos pos, String perm)
 	{
 		ClaimedChunk chunk = getChunk(pos);
 
@@ -276,7 +275,7 @@ public class ClaimedChunks
 			return false;
 		}
 
-		return player.hasTeam() && chunk.getTeam().equalsTeam(player.team) || player.hasPermission(FTBUtilitiesPermissions.CLAIMS_CHUNKS_MODIFY_OTHER);
+		return player.hasTeam() && chunk.getTeam().equalsTeam(player.team) || player.hasPermission(perm);
 	}
 
 	public ClaimResult claimChunk(ForgePlayer player, ChunkDimPos pos, boolean checkLimits)
@@ -295,7 +294,7 @@ public class ClaimedChunks
 		if (checkLimits)
 		{
 			int max = data.getMaxClaimChunks();
-			if (max == 0 || getTeamChunks(data.team, true).size() >= max)
+			if (max == 0 || getTeamChunks(data.team, OptionalInt.empty(), true).size() >= max)
 			{
 				return ClaimResult.NO_POWER;
 			}
@@ -336,20 +335,18 @@ public class ClaimedChunks
 
 	public void unclaimAllChunks(ForgeTeam team, OptionalInt dim)
 	{
-		for (ClaimedChunk chunk : getTeamChunks(team))
+		for (ClaimedChunk chunk : getTeamChunks(team, dim))
 		{
 			ChunkDimPos pos = chunk.getPos();
-			if (!dim.isPresent() || dim.getAsInt() == pos.dim)
-			{
-				if (chunk.isLoaded())
-				{
-					new ChunkModifiedEvent.Unloaded(chunk).post();
-				}
 
-				chunk.setLoaded(false);
-				new ChunkModifiedEvent.Unclaimed(chunk).post();
-				removeChunk(pos);
+			if (chunk.isLoaded())
+			{
+				new ChunkModifiedEvent.Unloaded(chunk).post();
 			}
+
+			chunk.setLoaded(false);
+			new ChunkModifiedEvent.Unclaimed(chunk).post();
+			removeChunk(pos);
 		}
 	}
 
@@ -376,7 +373,7 @@ public class ClaimedChunks
 
 		int loadedChunks = 0;
 
-		for (ClaimedChunk c : getTeamChunks(team))
+		for (ClaimedChunk c : getTeamChunks(team, OptionalInt.empty()))
 		{
 			if (c.isLoaded())
 			{

@@ -29,6 +29,11 @@ public class FTBUtilitiesCommands
 		if (event.getServer().isDedicatedServer())
 		{
 			event.registerServerCommand(new CmdShutdown());
+
+			if (FTBUtilitiesConfig.auto_shutdown.enabled)
+			{
+				event.registerServerCommand(new CmdShutdownTime());
+			}
 		}
 
 		if (FTBUtilitiesConfig.commands.inv)

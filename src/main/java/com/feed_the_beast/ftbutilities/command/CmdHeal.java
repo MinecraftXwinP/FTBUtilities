@@ -1,6 +1,8 @@
 package com.feed_the_beast.ftbutilities.command;
 
-import com.feed_the_beast.ftblib.lib.cmd.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CommandUtils;
+import com.feed_the_beast.ftbutilities.FTBUtilitiesPermissions;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -22,7 +24,7 @@ public class CmdHeal extends CmdBase
 	@Override
 	public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException
 	{
-		EntityPlayerMP player = getSelfOrOther(sender, args, 0);
+		EntityPlayerMP player = CommandUtils.getSelfOrOther(sender, args, 0, FTBUtilitiesPermissions.HEAL_OTHER).getCommandPlayer(sender);
 		player.setHealth(player.getMaxHealth());
 		player.getFoodStats().addStats(40, 40F);
 		player.extinguish();

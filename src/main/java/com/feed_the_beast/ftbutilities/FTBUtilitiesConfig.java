@@ -4,9 +4,12 @@ import com.feed_the_beast.ftblib.lib.config.EnumTristate;
 import com.feed_the_beast.ftblib.lib.io.DataReader;
 import com.feed_the_beast.ftblib.lib.item.ItemStackSerializer;
 import com.feed_the_beast.ftblib.lib.math.Ticks;
+import com.feed_the_beast.ftblib.lib.util.FileUtils;
 import com.feed_the_beast.ftblib.lib.util.JsonUtils;
+import com.feed_the_beast.ftblib.lib.util.ServerUtils;
 import com.feed_the_beast.ftblib.lib.util.StringUtils;
 import com.feed_the_beast.ftbutilities.data.ClaimedChunks;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.text.ITextComponent;
@@ -52,7 +55,7 @@ public class FTBUtilitiesConfig
 	public static class AutoShutdown
 	{
 		@Config.LangKey("addServer.resourcePack.enabled")
-		@Config.Comment("Enables auto-shutdown")
+		@Config.Comment("Enables auto-shutdown.")
 		public boolean enabled = false;
 
 		@Config.Comment({
@@ -72,16 +75,27 @@ public class FTBUtilitiesConfig
 		@Config.Comment("Enables afk timer in singleplayer.")
 		public boolean enabled_singleplayer = false;
 
-		@Config.RangeInt(min = 10)
-		@Config.Comment("After how many seconds it will display notification to all players.")
-		public int notification_seconds = 60;
+		@Config.Comment({"After how much time it will display notification to all players."})
+		public String notification_timer = "5m";
 
 		@Config.Comment("Will print in console when someone goes/comes back from AFK.")
-		public boolean log_afk = true;
+		public boolean log_afk = false;
+
+		private long notificationTimer = -1L;
 
 		public boolean isEnabled(MinecraftServer server)
 		{
 			return enabled && (enabled_singleplayer || !server.isSinglePlayer());
+		}
+
+		public long getNotificationTimer()
+		{
+			if (notificationTimer < 0L)
+			{
+				notificationTimer = Ticks.fromString(notification_timer);
+			}
+
+			return notificationTimer;
 		}
 	}
 
@@ -100,7 +114,7 @@ public class FTBUtilitiesConfig
 	public static class BackupsConfig
 	{
 		@Config.LangKey("addServer.resourcePack.enabled")
-		@Config.Comment("Enables backups")
+		@Config.Comment("Enables backups.")
 		public boolean enabled = true;
 
 		@Config.Comment("If set to true, no messages will be displayed in chat/status bar.")
@@ -137,14 +151,15 @@ public class FTBUtilitiesConfig
 		@Config.Comment("Prints (current size | total size) when backup is done.")
 		public boolean display_file_size = true;
 
-		@Config.Comment("Add extra files that will be placed in backup _extra_/ folder")
+		@Config.Comment("Add extra files that will be placed in backup _extra_/ folder.")
 		public String[] extra_files = { };
 
+		@Config.Comment("Maximum total size that is allowed in backups folder. Older backups will be deleted to free space for newer ones.")
 		public String max_total_size = "50 GB";
 
-		public long ticks()
+		public long time()
 		{
-			return (long) (backup_timer * Ticks.HOUR);
+			return Ticks.tms((long) (backup_timer * Ticks.HOUR));
 		}
 
 		public long getMaxTotalSize()
@@ -153,15 +168,15 @@ public class FTBUtilitiesConfig
 
 			if (s.endsWith("GB"))
 			{
-				return Long.parseLong(s.substring(0, s.length() - 2)) * 1024L * 1024L * 1024L;
+				return Long.parseLong(s.substring(0, s.length() - 2)) * FileUtils.GB;
 			}
 			else if (s.endsWith("MB"))
 			{
-				return Long.parseLong(s.substring(0, s.length() - 2)) * 1024L * 1024L;
+				return Long.parseLong(s.substring(0, s.length() - 2)) * FileUtils.MB;
 			}
 			else if (s.endsWith("KB"))
 			{
-				return Long.parseLong(s.substring(0, s.length() - 2)) * 1024L;
+				return Long.parseLong(s.substring(0, s.length() - 2)) * FileUtils.KB;
 			}
 
 			return Long.parseLong(s);
@@ -288,6 +303,36 @@ public class FTBUtilitiesConfig
 
 	public static class WorldConfig
 	{
+		public static class WorldLogging
+		{
+			@Config.Comment("Enables world logging.")
+			@Config.LangKey("addServer.resourcePack.enabled")
+			public boolean enabled = false;
+
+			@Config.Comment("Includes creative players in world logging.")
+			public boolean include_creative_players = false;
+
+			@Config.Comment("Includes fake players in world logging.")
+			public boolean include_fake_players = false;
+
+			@Config.Comment("Logs block placement.")
+			public boolean block_placed = true;
+
+			@Config.Comment("Logs block breaking.")
+			public boolean block_broken = true;
+
+			@Config.Comment("Logs item clicking in air.")
+			public boolean item_clicked_in_air = true;
+
+			public boolean log(EntityPlayerMP player)
+			{
+				return enabled && (include_creative_players || !player.capabilities.isCreativeMode) && (include_fake_players || !ServerUtils.isFake(player));
+			}
+		}
+
+		@Config.Comment("Logs different events in local/ftbutilities/world.log file.")
+		public final WorldLogging logging = new WorldLogging();
+
 		@Config.Comment("Enables chunk claiming.")
 		@Config.RequiresWorldRestart
 		public boolean chunk_claiming = true;
@@ -355,6 +400,7 @@ public class FTBUtilitiesConfig
 		ConfigManager.sync(FTBUtilities.MOD_ID, Config.Type.INSTANCE);
 		login.motdComponents = null;
 		login.startingItems = null;
+		afk.notificationTimer = -1L;
 	}
 
 	@SubscribeEvent

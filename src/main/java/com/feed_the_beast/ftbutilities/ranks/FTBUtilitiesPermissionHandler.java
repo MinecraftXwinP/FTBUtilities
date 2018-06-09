@@ -9,6 +9,7 @@ import com.feed_the_beast.ftblib.lib.config.RankConfigValueInfo;
 import com.feed_the_beast.ftblib.lib.util.misc.Node;
 import com.google.gson.JsonElement;
 import com.mojang.authlib.GameProfile;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.server.permission.DefaultPermissionHandler;
 import net.minecraftforge.server.permission.DefaultPermissionLevel;
@@ -40,7 +41,17 @@ public enum FTBUtilitiesPermissionHandler implements IPermissionHandler, IRankCo
 	@Override
 	public boolean hasPermission(GameProfile profile, String nodeS, @Nullable IContext context)
 	{
-		switch (Ranks.getPermissionResult(profile, Node.get(nodeS), context))
+		if (profile.getId() == null) //TODO: PR this fix in Forge
+		{
+			if (profile.getName() == null)
+			{
+				return false;
+			}
+
+			profile = new GameProfile(EntityPlayer.getOfflineUUID(profile.getName()), profile.getName());
+		}
+
+		switch (Ranks.getPermissionResult(null, profile, Node.get(nodeS), context))
 		{
 			case ALLOW:
 				return true;
@@ -78,7 +89,7 @@ public enum FTBUtilitiesPermissionHandler implements IPermissionHandler, IRankCo
 		{
 			Rank rank = Ranks.INSTANCE.getRank(server, profile, context);
 
-			if (rank != null)
+			if (!rank.isNone())
 			{
 				value = rank.cachedConfig.get(node);
 

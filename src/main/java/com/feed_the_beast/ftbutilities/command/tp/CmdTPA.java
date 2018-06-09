@@ -1,10 +1,11 @@
 package com.feed_the_beast.ftbutilities.command.tp;
 
 import com.feed_the_beast.ftblib.FTBLib;
-import com.feed_the_beast.ftblib.lib.cmd.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CommandUtils;
 import com.feed_the_beast.ftblib.lib.data.Universe;
-import com.feed_the_beast.ftblib.lib.math.Ticks;
 import com.feed_the_beast.ftblib.lib.util.StringUtils;
+import com.feed_the_beast.ftblib.lib.util.misc.TimeType;
 import com.feed_the_beast.ftbutilities.FTBUtilities;
 import com.feed_the_beast.ftbutilities.data.FTBUtilitiesPlayerData;
 import net.minecraft.command.CommandException;
@@ -36,16 +37,11 @@ public class CmdTPA extends CmdBase
 	public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException
 	{
 		checkArgs(sender, args, 1);
-		FTBUtilitiesPlayerData self = FTBUtilitiesPlayerData.get(getForgePlayer(sender));
+		FTBUtilitiesPlayerData self = FTBUtilitiesPlayerData.get(CommandUtils.getForgePlayer(sender));
 
-		long cooldown = self.getTeleportCooldown(FTBUtilitiesPlayerData.Timer.TPA);
+		self.checkTeleportCooldown(sender, FTBUtilitiesPlayerData.Timer.TPA);
 
-		if (cooldown > 0)
-		{
-			throw new CommandException("cant_use_now_cooldown", StringUtils.getTimeStringTicks(cooldown));
-		}
-
-		FTBUtilitiesPlayerData other = FTBUtilitiesPlayerData.get(getForgePlayer(sender, args[0]));
+		FTBUtilitiesPlayerData other = FTBUtilitiesPlayerData.get(CommandUtils.getForgePlayer(sender, args[0]));
 
 		ITextComponent selfName = StringUtils.color(self.player.getPlayer().getDisplayName(), TextFormatting.BLUE);
 		ITextComponent otherName = StringUtils.color(other.player.getPlayer().getDisplayName(), TextFormatting.BLUE);
@@ -72,16 +68,19 @@ public class CmdTPA extends CmdBase
 
 		other.player.getPlayer().sendMessage(FTBUtilities.lang(other.player.getPlayer(), "ftbutilities.lang.tpa.request_received", otherName, accept));
 
-		Universe.get().scheduleTask(server.getWorld(0).getTotalWorldTime() + Ticks.st(30L), universe -> {
+		Universe.get().scheduleTask(TimeType.MILLIS, System.currentTimeMillis() + 30000L, universe -> {
 			if (other.tpaRequestsFrom.remove(self.player))
 			{
 				ITextComponent component = FTBUtilities.lang(sender, "ftbutilities.lang.tpa.request_expired");
 				component.getStyle().setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, FTBUtilities.lang(sender, "ftbutilities.lang.tpa.from_to", selfName, otherName)));
 				sender.sendMessage(component);
 
-				component = FTBUtilities.lang(other.player.getPlayer(), "ftbutilities.lang.tpa.request_expired");
-				component.getStyle().setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, FTBUtilities.lang(other.player.getPlayer(), "ftbutilities.lang.tpa.from_to", selfName, otherName)));
-				other.player.getPlayer().sendMessage(component);
+				if (other.player.isOnline())
+				{
+					component = FTBUtilities.lang(other.player.getPlayer(), "ftbutilities.lang.tpa.request_expired");
+					component.getStyle().setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, FTBUtilities.lang(other.player.getPlayer(), "ftbutilities.lang.tpa.from_to", selfName, otherName)));
+					other.player.getPlayer().sendMessage(component);
+				}
 			}
 		});
 	}

@@ -1,6 +1,7 @@
 package com.feed_the_beast.ftbutilities.command.tp;
 
-import com.feed_the_beast.ftblib.lib.cmd.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CommandUtils;
 import com.feed_the_beast.ftblib.lib.data.Universe;
 import com.feed_the_beast.ftblib.lib.math.BlockDimPos;
 import com.feed_the_beast.ftbutilities.FTBUtilities;
@@ -8,12 +9,27 @@ import com.feed_the_beast.ftbutilities.data.FTBUtilitiesUniverseData;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.math.BlockPos;
+
+import javax.annotation.Nullable;
+import java.util.List;
 
 public class CmdSetWarp extends CmdBase
 {
 	public CmdSetWarp()
 	{
 		super("setwarp", Level.OP);
+	}
+
+	@Override
+	public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender, String[] args, @Nullable BlockPos pos)
+	{
+		if (args.length == 5)
+		{
+			return getListOfStringsMatchingLastWord(args, CommandUtils.getDimensionNames());
+		}
+
+		return super.getTabCompletions(server, sender, args, pos);
 	}
 
 	@Override
@@ -26,7 +42,7 @@ public class CmdSetWarp extends CmdBase
 
 		if (args.length == 2)
 		{
-			pos = new BlockDimPos(getPlayer(server, sender, args[1]));
+			pos = new BlockDimPos(CommandUtils.getForgePlayer(sender, args[1]).getCommandPlayer(sender));
 		}
 		else if (args.length >= 4)
 		{

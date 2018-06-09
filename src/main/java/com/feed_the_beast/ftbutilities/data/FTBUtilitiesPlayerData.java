@@ -17,18 +17,20 @@ import com.feed_the_beast.ftblib.lib.math.Ticks;
 import com.feed_the_beast.ftblib.lib.util.StringUtils;
 import com.feed_the_beast.ftblib.lib.util.misc.IScheduledTask;
 import com.feed_the_beast.ftblib.lib.util.misc.Node;
+import com.feed_the_beast.ftblib.lib.util.misc.TimeType;
 import com.feed_the_beast.ftbutilities.FTBUtilities;
 import com.feed_the_beast.ftbutilities.FTBUtilitiesConfig;
 import com.feed_the_beast.ftbutilities.FTBUtilitiesPermissions;
-import com.mojang.authlib.GameProfile;
+import com.feed_the_beast.ftbutilities.ranks.Rank;
+import com.google.gson.JsonElement;
+import net.minecraft.command.CommandException;
+import net.minecraft.command.ICommandSender;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
 import net.minecraftforge.common.util.INBTSerializable;
-import net.minecraftforge.server.permission.context.IContext;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -66,7 +68,7 @@ public class FTBUtilitiesPlayerData implements INBTSerializable<NBTTagCompound>,
 			if (seconds > 0)
 			{
 				player.sendStatusMessage(StringUtils.color(FTBLib.lang(player, "stand_still", seconds).appendText(" [" + seconds + "]"), TextFormatting.GOLD), true);
-				universe.scheduleTask(universe.world.getTotalWorldTime() + 20L, new TeleportTask(player, this, seconds, seconds, pos, extraTask));
+				universe.scheduleTask(TimeType.MILLIS, System.currentTimeMillis() + 1000L, new TeleportTask(player, this, seconds, seconds, pos, extraTask));
 			}
 			else
 			{
@@ -127,7 +129,7 @@ public class FTBUtilitiesPlayerData implements INBTSerializable<NBTTagCompound>,
 			}
 			else
 			{
-				universe.scheduleTask(universe.world.getTotalWorldTime() + 20L, new TeleportTask(player, timer, startSeconds, secondsLeft - 1, pos, extraTask));
+				universe.scheduleTask(TimeType.MILLIS, System.currentTimeMillis() + 1000L, new TeleportTask(player, timer, startSeconds, secondsLeft - 1, pos, extraTask));
 				player.sendStatusMessage(new TextComponentString(Integer.toString(secondsLeft - 1)), true);
 				player.sendStatusMessage(StringUtils.color(FTBLib.lang(player, "stand_still", startSeconds).appendText(" [" + (secondsLeft - 1) + "]"), TextFormatting.GOLD), true);
 			}
@@ -145,7 +147,7 @@ public class FTBUtilitiesPlayerData implements INBTSerializable<NBTTagCompound>,
 	public ForgeTeam lastChunkTeam;
 	public final Collection<ForgePlayer> tpaRequestsFrom;
 	public long afkTicks;
-	public ITextComponent cachedNameForChat;
+	private ITextComponent cachedNameForChat;
 
 	private BlockDimPos lastDeath, lastSafePos;
 	private long[] lastTeleport;
@@ -205,7 +207,7 @@ public class FTBUtilitiesPlayerData implements INBTSerializable<NBTTagCompound>,
 		group.add(FTBUtilities.MOD_ID, "disable_global_badge", disableGlobalBadge);
 		group.add(FTBUtilities.MOD_ID, "enable_pvp", enablePVP);
 
-		if (FTBUtilitiesConfig.commands.nick && player.hasPermission(FTBUtilitiesPermissions.NICKNAME))
+		if (FTBUtilitiesConfig.commands.nick && player.hasPermission(FTBUtilitiesPermissions.NICKNAME_SET))
 		{
 			group.add(FTBUtilities.MOD_ID, "nickname", nickname);
 		}
@@ -283,9 +285,14 @@ public class FTBUtilitiesPlayerData implements INBTSerializable<NBTTagCompound>,
 		return lastSafePos;
 	}
 
-	public long getTeleportCooldown(Timer timer)
+	public void checkTeleportCooldown(ICommandSender sender, Timer timer) throws CommandException
 	{
-		return lastTeleport[timer.ordinal()] + player.getRankConfig(timer.cooldown).getLong() - player.team.universe.world.getTotalWorldTime();
+		long cooldown = lastTeleport[timer.ordinal()] + player.getRankConfig(timer.cooldown).getLong() - player.team.universe.world.getTotalWorldTime();
+
+		if (cooldown > 0)
+		{
+			throw FTBLib.error(sender, "cant_use_now_cooldown", StringUtils.getTimeStringTicks(cooldown));
+		}
 	}
 
 	@Override
@@ -299,20 +306,69 @@ public class FTBUtilitiesPlayerData implements INBTSerializable<NBTTagCompound>,
 		}
 	}
 
-	public ITextComponent getNameForChat(MinecraftServer server, GameProfile profile, IContext context)
+	public ITextComponent getNameForChat(Rank rank)
 	{
-		if (cachedNameForChat == null)
+		if (cachedNameForChat != null)
 		{
-			cachedNameForChat = new TextComponentString("");
-			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_PREFIX_LEFT.getText(server, profile, context));
-			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_PREFIX_BASE.getText(server, profile, context));
-			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_PREFIX_RIGHT.getText(server, profile, context));
-			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_NAME.format(server, profile, context, player.getDisplayName()));
-			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_SUFFIX_LEFT.getText(server, profile, context));
-			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_SUFFIX_BASE.getText(server, profile, context));
-			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_SUFFIX_RIGHT.getText(server, profile, context));
+			return cachedNameForChat;
 		}
 
+		cachedNameForChat = new TextComponentString("");
+
+		JsonElement json0 = rank.getConfigRaw(FTBUtilitiesPermissions.CHAT_PREFIX_PART_COUNT);
+		int partCount = json0.isJsonPrimitive() ? json0.getAsInt() : 0;
+
+		if (partCount <= 0)
+		{
+			cachedNameForChat.appendText("<");
+		}
+		else
+		{
+			for (int i = 0; i < partCount; i++)
+			{
+				FTBUtilitiesPermissions.ChatPart chatPart = new FTBUtilitiesPermissions.ChatPart("prefix." + (i + 1));
+				json0 = rank.getConfigRaw(chatPart.text);
+
+				if (json0.isJsonPrimitive())
+				{
+					cachedNameForChat.appendSibling(chatPart.format(rank, new TextComponentString(json0.getAsString()), FTBUtilitiesPermissions.CHAT_PREFIX));
+				}
+			}
+		}
+
+		json0 = rank.getConfigRaw(FTBUtilitiesPermissions.CHAT_NAME.text);
+
+		if (json0.isJsonPrimitive() && !json0.getAsString().isEmpty())
+		{
+			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_NAME.format(rank, new TextComponentString(json0.getAsString()), null));
+		}
+		else
+		{
+			cachedNameForChat.appendSibling(FTBUtilitiesPermissions.CHAT_NAME.format(rank, player.getDisplayName(), null));
+		}
+
+		json0 = rank.getConfigRaw(FTBUtilitiesPermissions.CHAT_SUFFIX_PART_COUNT);
+		partCount = json0.isJsonPrimitive() ? json0.getAsInt() : 0;
+
+		if (partCount <= 0)
+		{
+			cachedNameForChat.appendText(">");
+		}
+		else
+		{
+			for (int i = 0; i < partCount; i++)
+			{
+				FTBUtilitiesPermissions.ChatPart chatPart = new FTBUtilitiesPermissions.ChatPart("suffix." + (i + 1));
+				json0 = rank.getConfigRaw(chatPart.text);
+
+				if (json0.isJsonPrimitive())
+				{
+					cachedNameForChat.appendSibling(chatPart.format(rank, new TextComponentString(json0.getAsString()), FTBUtilitiesPermissions.CHAT_SUFFIX));
+				}
+			}
+		}
+
+		cachedNameForChat.appendText(" ");
 		return cachedNameForChat;
 	}
 }

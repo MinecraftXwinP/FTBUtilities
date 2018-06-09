@@ -4,11 +4,9 @@ import com.feed_the_beast.ftblib.events.RegisterPermissionsEvent;
 import com.feed_the_beast.ftblib.events.RegisterRankConfigEvent;
 import com.feed_the_beast.ftblib.events.RegisterRankConfigHandlerEvent;
 import com.feed_the_beast.ftblib.lib.EventHandler;
-import com.feed_the_beast.ftblib.lib.config.ConfigEnum;
 import com.feed_the_beast.ftblib.lib.config.ConfigInt;
 import com.feed_the_beast.ftblib.lib.config.ConfigString;
 import com.feed_the_beast.ftblib.lib.config.ConfigTimer;
-import com.feed_the_beast.ftblib.lib.config.RankConfigAPI;
 import com.feed_the_beast.ftblib.lib.math.BlockPosContainer;
 import com.feed_the_beast.ftblib.lib.math.Ticks;
 import com.feed_the_beast.ftblib.lib.util.StringUtils;
@@ -17,7 +15,8 @@ import com.feed_the_beast.ftbutilities.data.BlockInteractionType;
 import com.feed_the_beast.ftbutilities.data.Leaderboard;
 import com.feed_the_beast.ftbutilities.events.CustomPermissionPrefixesRegistryEvent;
 import com.feed_the_beast.ftbutilities.ranks.FTBUtilitiesPermissionHandler;
-import com.mojang.authlib.GameProfile;
+import com.feed_the_beast.ftbutilities.ranks.Rank;
+import com.google.gson.JsonElement;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockAnvil;
 import net.minecraft.block.BlockDoor;
@@ -26,11 +25,10 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemBucket;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.EnumHand;
 import net.minecraft.util.text.ITextComponent;
-import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextFormatting;
+import net.minecraftforge.fml.common.eventhandler.Event;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.registries.IForgeRegistryEntry;
 import net.minecraftforge.server.permission.DefaultPermissionLevel;
@@ -55,15 +53,19 @@ public class FTBUtilitiesPermissions
 	public static final Node HOMES_MAX = Node.get("ftbutilities.homes.max");
 	public static final Node HOMES_COOLDOWN = Node.get("ftbutilities.homes.cooldown");
 	public static final Node HOMES_WARMUP = Node.get("ftbutilities.homes.warmup");
-	public static final String HOMES_LIST_OTHER = "ftbutilities.homes.list_other";
-	public static final String HOMES_TELEPORT_OTHER = "ftbutilities.homes.teleport_other";
+	public static final String HOMES_LIST_OTHER = "ftbutilities.other_player.homes.list";
+	public static final String HOMES_TELEPORT_OTHER = "ftbutilities.other_player.homes.teleport";
 
 	// Warps //
 	public static final Node WARPS_COOLDOWN = Node.get("ftbutilities.warps.cooldown");
 	public static final Node WARPS_WARMUP = Node.get("ftbutilities.warps.warmup");
 
 	// Claims //
-	public static final String CLAIMS_CHUNKS_MODIFY_OTHER = "ftbutilities.claims.modify.other";
+	public static final String CLAIMS_OTHER_SEE_INFO = "ftbutilities.other_player.claims.see_info";
+	public static final String CLAIMS_OTHER_CLAIM = "ftbutilities.other_player.claims.claim";
+	public static final String CLAIMS_OTHER_UNCLAIM = "ftbutilities.other_player.claims.unclaim";
+	public static final String CLAIMS_OTHER_LOAD = "ftbutilities.other_player.claims.load";
+	public static final String CLAIMS_OTHER_UNLOAD = "ftbutilities.other_player.claims.unload";
 	public static final Node CLAIMS_MAX_CHUNKS = Node.get("ftbutilities.claims.max_chunks");
 	public static final String CLAIMS_BLOCK_CNB = "ftbutilities.claims.block.cnb";
 	private static final String CLAIMS_BLOCK_EDIT_PREFIX = "ftbutilities.claims.block.edit.";
@@ -77,104 +79,95 @@ public class FTBUtilitiesPermissions
 
 	public static class ChatPart
 	{
-		public final String id;
-		public final Node color;
-		public final String bold, italic, underlined, strikethrough, obfuscated;
+		public final Node color, text, bold, italic, underlined, strikethrough, obfuscated;
 
 		public ChatPart(String s)
 		{
-			id = s;
-			color = Node.get("ftbutilities.chat." + id + ".color");
-			bold = "ftbutilities.chat." + id + ".bold";
-			italic = "ftbutilities.chat." + id + ".italic";
-			underlined = "ftbutilities.chat." + id + ".underlined";
-			strikethrough = "ftbutilities.chat." + id + ".strikethrough";
-			obfuscated = "ftbutilities.chat." + id + ".obfuscated";
+			Node node = CHAT.append(s);
+			color = node.append("color");
+			text = node.append("text");
+			bold = node.append("bold");
+			italic = node.append("italic");
+			underlined = node.append("underlined");
+			strikethrough = node.append("strikethrough");
+			obfuscated = node.append("obfuscated");
 		}
 
-		public void registerPermissions(RegisterPermissionsEvent event)
+		public ITextComponent format(Rank rank, ITextComponent component, @Nullable ChatPart alt)
 		{
-			event.registerNode(bold, DefaultPermissionLevel.NONE, "Make the " + id + " bold");
-			event.registerNode(italic, DefaultPermissionLevel.NONE, "Make the " + id + " italic");
-			event.registerNode(underlined, DefaultPermissionLevel.NONE, "Make the " + id + " underlined");
-			event.registerNode(strikethrough, DefaultPermissionLevel.NONE, "Make the " + id + " strikethrough");
-			event.registerNode(obfuscated, DefaultPermissionLevel.NONE, "Make the " + id + " obfuscated");
-		}
+			JsonElement json;
+			TextFormatting colortf = TextFormatting.WHITE;
 
-		public void registerConfigs(RegisterRankConfigEvent event, String defText)
-		{
-			event.register(color, new ConfigEnum<>(StringUtils.TEXT_FORMATTING_COLORS_NAME_MAP));
-		}
+			if (alt != null)
+			{
+				json = rank.getConfigRaw(alt.color);
 
-		public ITextComponent format(MinecraftServer server, GameProfile profile, IContext context, ITextComponent component)
-		{
-			TextFormatting colortf = (TextFormatting) RankConfigAPI.get(server, profile, color, context).getValue();
+				if (json.isJsonPrimitive())
+				{
+					colortf = StringUtils.TEXT_FORMATTING_COLORS_NAME_MAP.get(json.getAsString());
+				}
+			}
+
+			json = rank.getConfigRaw(color);
+
+			if (json.isJsonPrimitive())
+			{
+				colortf = StringUtils.TEXT_FORMATTING_COLORS_NAME_MAP.get(json.getAsString());
+			}
 
 			if (colortf != TextFormatting.WHITE)
 			{
 				component.getStyle().setColor(colortf);
 			}
 
-			if (PermissionAPI.hasPermission(profile, bold, context))
+			if (getStyleBoolean(rank, bold, alt == null ? null : alt.bold))
 			{
 				component.getStyle().setBold(true);
 			}
 
-			if (PermissionAPI.hasPermission(profile, italic, context))
+			if (getStyleBoolean(rank, italic, alt == null ? null : alt.italic))
 			{
 				component.getStyle().setItalic(true);
 			}
 
-			if (PermissionAPI.hasPermission(profile, underlined, context))
+			if (getStyleBoolean(rank, underlined, alt == null ? null : alt.underlined))
 			{
 				component.getStyle().setUnderlined(true);
 			}
 
-			if (PermissionAPI.hasPermission(profile, strikethrough, context))
+			if (getStyleBoolean(rank, strikethrough, alt == null ? null : alt.strikethrough))
 			{
 				component.getStyle().setStrikethrough(true);
 			}
 
-			if (PermissionAPI.hasPermission(profile, obfuscated, context))
+			if (getStyleBoolean(rank, obfuscated, alt == null ? null : alt.obfuscated))
 			{
 				component.getStyle().setObfuscated(true);
 			}
 
 			return component;
 		}
-	}
 
-	public static class ChatPartWithText extends ChatPart
-	{
-		public final Node text;
-
-		public ChatPartWithText(String s)
+		private boolean getStyleBoolean(Rank rank, Node main, @Nullable Node alt)
 		{
-			super(s);
-			text = Node.get("ftbutilities.chat." + id + ".text");
-		}
+			Event.Result result = rank.getPermissionRaw(main, false);
 
-		@Override
-		public void registerConfigs(RegisterRankConfigEvent event, String defText)
-		{
-			super.registerConfigs(event, defText);
-			event.register(text, new ConfigString(defText));
-		}
+			if (result == Event.Result.DEFAULT && alt != null)
+			{
+				result = rank.getPermissionRaw(alt, false);
+			}
 
-		public ITextComponent getText(MinecraftServer server, GameProfile profile, IContext context)
-		{
-			return format(server, profile, context, new TextComponentString(RankConfigAPI.get(server, profile, text, context).getString()));
+			return result == Event.Result.ALLOW;
 		}
 	}
 
 	// Chat //
-	public static final ChatPartWithText CHAT_PREFIX_LEFT = new ChatPartWithText("prefix.left");
-	public static final ChatPartWithText CHAT_PREFIX_BASE = new ChatPartWithText("prefix.base");
-	public static final ChatPartWithText CHAT_PREFIX_RIGHT = new ChatPartWithText("prefix.right");
+	public static final Node CHAT = Node.get("ftbutilities.chat");
+	public static final Node CHAT_PREFIX_PART_COUNT = CHAT.append("prefix.part_count");
+	public static final ChatPart CHAT_PREFIX = new ChatPart("prefix");
 	public static final ChatPart CHAT_NAME = new ChatPart("name");
-	public static final ChatPartWithText CHAT_SUFFIX_LEFT = new ChatPartWithText("suffix.left");
-	public static final ChatPartWithText CHAT_SUFFIX_BASE = new ChatPartWithText("suffix.base");
-	public static final ChatPartWithText CHAT_SUFFIX_RIGHT = new ChatPartWithText("suffix.right");
+	public static final Node CHAT_SUFFIX_PART_COUNT = CHAT.append("suffix.part_count");
+	public static final ChatPart CHAT_SUFFIX = new ChatPart("suffix");
 	public static final ChatPart CHAT_TEXT = new ChatPart("text");
 
 	// Other //
@@ -190,8 +183,10 @@ public class FTBUtilitiesPermissions
 	public static final Node SPAWN_WARMUP = Node.get("ftbutilities.spawn.warmup");
 	public static final Node BACK_WARMUP = Node.get("ftbutilities.back.warmup");
 	public static final String TPA_CROSS_DIM = "ftbutilities.tpa.cross_dim";
-	public static final String NICKNAME = "ftbutilities.nickname";
+	public static final String NICKNAME_SET = "ftbutilities.nickname.set";
+	public static final String NICKNAME_COLORS = "ftbutilities.nickname.colors";
 	public static final Node AFK_TIMER = Node.get("ftbutilities.afk.timer");
+	public static final String HEAL_OTHER = "ftbutilities.other_player.heal";
 
 	@SubscribeEvent
 	public static void registerRankConfigHandler(RegisterRankConfigHandlerEvent event)
@@ -209,7 +204,11 @@ public class FTBUtilitiesPermissions
 		event.registerNode(HOMES_CROSS_DIM, DefaultPermissionLevel.ALL, "Can use /home to teleport to/from another dimension");
 		event.registerNode(HOMES_LIST_OTHER, DefaultPermissionLevel.OP, "Allow to list other people homes");
 		event.registerNode(HOMES_TELEPORT_OTHER, DefaultPermissionLevel.OP, "Allow to teleport to other people homes");
-		event.registerNode(CLAIMS_CHUNKS_MODIFY_OTHER, DefaultPermissionLevel.OP, "Allow player to modify other team chunks");
+		event.registerNode(CLAIMS_OTHER_SEE_INFO, DefaultPermissionLevel.OP, "Allow player to see info of other team chunks");
+		event.registerNode(CLAIMS_OTHER_CLAIM, DefaultPermissionLevel.OP, "Allow player to claim other team chunks");
+		event.registerNode(CLAIMS_OTHER_UNCLAIM, DefaultPermissionLevel.OP, "Allow player to unclaim other team chunks");
+		event.registerNode(CLAIMS_OTHER_LOAD, DefaultPermissionLevel.OP, "Allow player to load other team chunks");
+		event.registerNode(CLAIMS_OTHER_UNLOAD, DefaultPermissionLevel.OP, "Allow player to unload other team chunks");
 		event.registerNode(CLAIMS_BLOCK_CNB, DefaultPermissionLevel.OP, "Allow to edit C&B bits in claimed chunks");
 		event.registerNode(CHUNKLOADER_LOAD_OFFLINE, DefaultPermissionLevel.ALL, "Keep loaded chunks working when player goes offline");
 		event.registerNode(INFINITE_BACK_USAGE, DefaultPermissionLevel.NONE, "Allow to use 'back' command infinite times");
@@ -217,7 +216,8 @@ public class FTBUtilitiesPermissions
 		event.registerNode(DELETE_CRASH_REPORTS, DefaultPermissionLevel.OP, "Allow to delete crash reports, requires " + VIEW_CRASH_REPORTS);
 		event.registerNode(EDIT_WORLD_GAMERULES, DefaultPermissionLevel.OP, "Allow to edit gamerules via Admin Panel");
 		event.registerNode(TPA_CROSS_DIM, DefaultPermissionLevel.ALL, "Can use /tpa to teleport to/from another dimension");
-		event.registerNode(NICKNAME, DefaultPermissionLevel.OP, "Allow to change nickname");
+		event.registerNode(NICKNAME_SET, DefaultPermissionLevel.OP, "Allow to change nickname");
+		event.registerNode(NICKNAME_COLORS, DefaultPermissionLevel.OP, "Allow to use formatting codes in nickname, requires " + NICKNAME_SET);
 
 		for (Block block : Block.REGISTRY)
 		{
@@ -241,15 +241,6 @@ public class FTBUtilitiesPermissions
 		{
 			event.registerNode(getLeaderboardNode(leaderboard), DefaultPermissionLevel.ALL);
 		}
-
-		CHAT_PREFIX_LEFT.registerPermissions(event);
-		CHAT_PREFIX_BASE.registerPermissions(event);
-		CHAT_PREFIX_RIGHT.registerPermissions(event);
-		CHAT_NAME.registerPermissions(event);
-		CHAT_SUFFIX_LEFT.registerPermissions(event);
-		CHAT_SUFFIX_BASE.registerPermissions(event);
-		CHAT_SUFFIX_RIGHT.registerPermissions(event);
-		CHAT_TEXT.registerPermissions(event);
 	}
 
 	@SubscribeEvent
@@ -271,15 +262,6 @@ public class FTBUtilitiesPermissions
 		event.register(CHUNKLOADER_MAX_CHUNKS, new ConfigInt(50, 0, 30000), new ConfigInt(64));
 		//event.register(CHUNKLOADER_OFFLINE_TIMER, new ConfigDouble(-1D).setMin(-1D), new ConfigDouble(-1D));
 		event.register(AFK_TIMER, new ConfigTimer(0));
-
-		CHAT_PREFIX_LEFT.registerConfigs(event, "");
-		CHAT_PREFIX_BASE.registerConfigs(event, "<");
-		CHAT_PREFIX_RIGHT.registerConfigs(event, "");
-		CHAT_NAME.registerConfigs(event, "");
-		CHAT_SUFFIX_LEFT.registerConfigs(event, "");
-		CHAT_SUFFIX_BASE.registerConfigs(event, "> ");
-		CHAT_SUFFIX_RIGHT.registerConfigs(event, "");
-		CHAT_TEXT.registerConfigs(event, "");
 	}
 
 	@SubscribeEvent

@@ -1,6 +1,8 @@
 package com.feed_the_beast.ftbutilities.command.chunks;
 
-import com.feed_the_beast.ftblib.lib.cmd.CmdBase;
+import com.feed_the_beast.ftblib.FTBLib;
+import com.feed_the_beast.ftblib.lib.command.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CommandUtils;
 import com.feed_the_beast.ftblib.lib.data.ForgePlayer;
 import com.feed_the_beast.ftblib.lib.util.text_components.Notification;
 import com.feed_the_beast.ftbutilities.FTBUtilities;
@@ -10,13 +12,12 @@ import com.feed_the_beast.ftbutilities.data.ClaimedChunk;
 import com.feed_the_beast.ftbutilities.data.ClaimedChunks;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
-import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.math.BlockPos;
-import net.minecraftforge.server.permission.PermissionAPI;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.OptionalInt;
 
 /**
  * @author LatvianModder
@@ -33,7 +34,7 @@ public class CmdUnloadAll extends CmdBase
 	{
 		if (args.length == 1)
 		{
-			return getListOfStringsMatchingLastWord(args, LIST_TRUE_FALSE);
+			return getListOfStringsMatchingLastWord(args, CommandUtils.getDimensionNames());
 		}
 
 		return super.getTabCompletions(server, sender, args, pos);
@@ -50,45 +51,25 @@ public class CmdUnloadAll extends CmdBase
 	{
 		if (!ClaimedChunks.isActive())
 		{
-			throw new CommandException("feature_disabled_server");
+			throw FTBLib.error(sender, "feature_disabled_server");
 		}
 
-		ForgePlayer p;
-
-		if (args.length >= 2)
-		{
-			if (!(sender instanceof EntityPlayerMP) || PermissionAPI.hasPermission((EntityPlayerMP) sender, FTBUtilitiesPermissions.CLAIMS_CHUNKS_MODIFY_OTHER))
-			{
-				p = getForgePlayer(sender, args[1]);
-			}
-			else
-			{
-				throw new CommandException("commands.generic.permission");
-			}
-		}
-		else
-		{
-			p = getForgePlayer(sender);
-		}
+		ForgePlayer p = CommandUtils.getSelfOrOther(sender, args, 1, FTBUtilitiesPermissions.CLAIMS_OTHER_UNLOAD);
 
 		if (p.hasTeam())
 		{
-			boolean allDimensions = args.length == 0 || parseBoolean(args[0]);
-			int dim = sender.getEntityWorld().provider.getDimension();
+			OptionalInt dimension = CommandUtils.parseDimension(sender, args, 0);
 
-			for (ClaimedChunk chunk : ClaimedChunks.instance.getTeamChunks(p.team))
+			for (ClaimedChunk chunk : ClaimedChunks.instance.getTeamChunks(p.team, dimension))
 			{
-				if (!allDimensions || dim == chunk.getPos().dim)
-				{
-					chunk.setLoaded(false);
-				}
+				chunk.setLoaded(false);
 			}
 
 			Notification.of(FTBUtilitiesNotifications.UNCLAIMED_ALL, FTBUtilities.lang(sender, "ftbutilities.lang.chunks.unloaded_all")).send(server, sender);
 		}
 		else
 		{
-			throw new CommandException("ftblib.lang.team.error.no_team");
+			throw FTBLib.error(sender, "ftblib.lang.team.error.no_team");
 		}
 	}
 }

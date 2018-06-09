@@ -1,7 +1,7 @@
 package com.feed_the_beast.ftbutilities.command;
 
 import com.feed_the_beast.ftblib.FTBLib;
-import com.feed_the_beast.ftblib.lib.cmd.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CmdBase;
 import com.feed_the_beast.ftblib.lib.data.ForgePlayer;
 import com.feed_the_beast.ftblib.lib.data.Universe;
 import com.feed_the_beast.ftblib.lib.util.StringUtils;
@@ -65,7 +65,7 @@ public class CmdLeaderboard extends CmdBase
 
 				ITextComponent component1 = leaderboard.getTitle().createCopy();
 				component1.getStyle().setColor(TextFormatting.GOLD);
-				component1.getStyle().setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/ftb leaderboards " + leaderboard.id));
+				component1.getStyle().setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/leaderboards " + leaderboard.id));
 				component.appendSibling(component1);
 			}
 

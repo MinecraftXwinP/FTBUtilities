@@ -1,6 +1,7 @@
 package com.feed_the_beast.ftbutilities.command;
 
-import com.feed_the_beast.ftblib.lib.cmd.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CmdBase;
+import com.feed_the_beast.ftblib.lib.command.CommandUtils;
 import com.feed_the_beast.ftblib.lib.util.CommonUtils;
 import com.feed_the_beast.ftbutilities.FTBUtilities;
 import net.minecraft.command.CommandException;
@@ -20,6 +21,7 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.function.Predicate;
 
 /**
@@ -50,6 +52,10 @@ public class CmdKillall extends CmdBase
 		{
 			return getListOfStringsMatchingLastWord(args, TAB);
 		}
+		else if (args.length == 2)
+		{
+			return getListOfStringsMatchingLastWord(args, CommandUtils.getDimensionNames());
+		}
 
 		return super.getTabCompletions(server, sender, args, pos);
 	}
@@ -57,13 +63,17 @@ public class CmdKillall extends CmdBase
 	@Override
 	public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException
 	{
-		Predicate<Entity> predicate = ALL;
-		String type = "all";
+		Predicate<Entity> predicate = NON_PLAYER;
+		String type = "non_players";
 
 		if (args.length >= 1)
 		{
 			switch (args[0])
 			{
+				case "all":
+					predicate = ALL;
+					type = "all";
+					break;
 				case "item":
 				case "items":
 					predicate = ITEM;
@@ -107,13 +117,15 @@ public class CmdKillall extends CmdBase
 			}
 		}
 
+		OptionalInt dimension = CommandUtils.parseDimension(sender, args, 1);
+
 		int killed = 0;
 
 		for (World world : server.worlds)
 		{
 			for (Entity entity : new ArrayList<>(world.loadedEntityList))
 			{
-				if (predicate.test(entity))
+				if (predicate.test(entity) && (!dimension.isPresent() || dimension.getAsInt() == entity.dimension))
 				{
 					entity.onKillCommand();
 					killed++;

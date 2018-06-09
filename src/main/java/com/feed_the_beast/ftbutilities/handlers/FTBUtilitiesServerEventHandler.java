@@ -13,10 +13,9 @@ import com.feed_the_beast.ftbutilities.data.ClaimedChunks;
 import com.feed_the_beast.ftbutilities.data.FTBUtilitiesPlayerData;
 import com.feed_the_beast.ftbutilities.data.FTBUtilitiesUniverseData;
 import com.feed_the_beast.ftbutilities.data.backups.Backups;
+import com.feed_the_beast.ftbutilities.ranks.Rank;
 import com.feed_the_beast.ftbutilities.ranks.Ranks;
-import com.mojang.authlib.GameProfile;
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
@@ -28,7 +27,6 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
-import net.minecraftforge.server.permission.context.IContext;
 import net.minecraftforge.server.permission.context.PlayerContext;
 
 /**
@@ -43,19 +41,23 @@ public class FTBUtilitiesServerEventHandler
 	@SubscribeEvent(priority = EventPriority.HIGHEST)
 	public static void onServerChatEvent(ServerChatEvent event)
 	{
-		if (!FTBUtilitiesConfig.ranks.override_chat || Ranks.INSTANCE == null)
+		if (!FTBUtilitiesConfig.ranks.override_chat || !Ranks.isActive())
 		{
 			return;
 		}
 
 		EntityPlayerMP player = event.getPlayer();
-		MinecraftServer server = player.mcServer;
-		IContext context = new PlayerContext(player);
-		GameProfile profile = player.getGameProfile();
+		Rank rank = Ranks.INSTANCE.getRank(player.mcServer, player.getGameProfile(), new PlayerContext(player));
+
+		if (rank.isNone())
+		{
+			return;
+		}
+
 		ITextComponent main = new TextComponentString("");
 		FTBUtilitiesPlayerData data = FTBUtilitiesPlayerData.get(Universe.get().getPlayer(player));
-		main.appendSibling(data.getNameForChat(server, profile, context));
-		main.appendSibling(FTBUtilitiesPermissions.CHAT_TEXT.format(server, profile, context, ForgeHooks.newChatWithLinks(event.getMessage().trim())));
+		main.appendSibling(data.getNameForChat(rank));
+		main.appendSibling(FTBUtilitiesPermissions.CHAT_TEXT.format(rank, ForgeHooks.newChatWithLinks(event.getMessage().trim()), null));
 		event.setComponent(main);
 	}
 
@@ -69,13 +71,14 @@ public class FTBUtilitiesServerEventHandler
 
 		Universe universe = Universe.get();
 
-		long now = universe.world.getTotalWorldTime();
+		long nowTicks = universe.world.getTotalWorldTime();
+		long nowTime = System.currentTimeMillis();
 
 		if (event.phase == TickEvent.Phase.START)
 		{
 			if (ClaimedChunks.isActive())
 			{
-				ClaimedChunks.instance.update(universe.server, now);
+				ClaimedChunks.instance.update(universe.server, nowTicks);
 			}
 		}
 		else
@@ -99,9 +102,9 @@ public class FTBUtilitiesServerEventHandler
 						}
 					}
 
-					boolean prevIsAfk = data.afkTicks >= Ticks.st(FTBUtilitiesConfig.afk.notification_seconds);
+					boolean prevIsAfk = data.afkTicks >= FTBUtilitiesConfig.afk.getNotificationTimer();
 					data.afkTicks = (int) ((System.currentTimeMillis() - player.getLastActiveTime()) * Ticks.SECOND / 1000L);
-					boolean isAFK = data.afkTicks >= Ticks.st(FTBUtilitiesConfig.afk.notification_seconds);
+					boolean isAFK = data.afkTicks >= FTBUtilitiesConfig.afk.getNotificationTimer();
 
 					if (prevIsAfk != isAFK)
 					{
@@ -111,7 +114,7 @@ public class FTBUtilitiesServerEventHandler
 
 							if (location != EnumMessageLocation.OFF)
 							{
-								ITextComponent component = FTBUtilities.lang(player1, isAFK ? "rank_config.ftbutilities.afk.timer.is_afk" : "rank_config.ftbutilities.afk.timer.isnt_afk", player.getDisplayName());
+								ITextComponent component = FTBUtilities.lang(player1, isAFK ? "permission.ftbutilities.afk.timer.is_afk" : "permission.ftbutilities.afk.timer.isnt_afk", player.getDisplayName());
 								component.getStyle().setColor(TextFormatting.GRAY);
 
 								if (location == EnumMessageLocation.CHAT)
@@ -145,14 +148,18 @@ public class FTBUtilitiesServerEventHandler
 				}
 			}
 
+			Backups.INSTANCE.tick(universe, nowTicks, nowTime);
+
 			if (FTBUtilitiesUniverseData.shutdownTime > 0L)
 			{
-				long t = FTBUtilitiesUniverseData.shutdownTime - now;
+				long t = Ticks.mst(FTBUtilitiesUniverseData.shutdownTime - nowTime);
 
 				if (t <= 0)
 				{
-					CmdShutdown.shutdown(universe.server);
-					return;
+					if (Backups.INSTANCE.doingBackup == 0)
+					{
+						CmdShutdown.shutdown(universe.server);
+					}
 				}
 				else if ((t <= Ticks.st(10L) && t % Ticks.SECOND == Ticks.SECOND - 1L) || t == Ticks.mt(1L) || t == Ticks.mt(5L) || t == Ticks.mt(10L) || t == Ticks.mt(30L))
 				{
@@ -162,8 +169,6 @@ public class FTBUtilitiesServerEventHandler
 					}
 				}
 			}
-
-			Backups.INSTANCE.tick(universe, now);
 		}
 	}
 }
